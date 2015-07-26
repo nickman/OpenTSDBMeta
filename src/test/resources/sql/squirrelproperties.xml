@@ -1,0 +1,29 @@
+        <driverProperties Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverPropertyCollection">
+            <driverProperties Indexed="true">
+                <Bean Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverProperty">
+                    <isSpecified>true</isSpecified>
+                    <name>remarksReporting</name>
+                    <value>true</value>
+                </Bean>
+                <Bean Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverProperty">
+                    <isSpecified>true</isSpecified>
+                    <name>phoenix.functions.allowUserDefinedFunctions</name>
+                    <value>true</value>
+                </Bean>
+                <Bean Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverProperty">
+                    <isSpecified>true</isSpecified>
+                    <name>hbase.tmp.dir</name>
+                    <value>/tmp/hbase-nwhitehead/hbase</value>
+                </Bean>
+                <Bean Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverProperty">
+                    <isSpecified>true</isSpecified>
+                    <name>hbase.rootdir</name>
+                    <value>/home/nwhitehead/services/hbase/hbase-0.98.13-hadoop2</value>
+                </Bean>
+                <Bean Class="net.sourceforge.squirrel_sql.fw.sql.SQLDriverProperty">
+                    <isSpecified>true</isSpecified>
+                    <name>hbase.dynamic.jars.dir</name>
+                    <value>/home/nwhitehead/services/hbase/hbase-0.98.13-hadoop2/lib</value>
+                </Bean>
+            </driverProperties>
+        </driverProperties>
