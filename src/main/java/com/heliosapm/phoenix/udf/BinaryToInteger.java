@@ -16,12 +16,13 @@
 package com.heliosapm.phoenix.udf;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 
-import jline.internal.Log;
-
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
-import org.apache.phoenix.coprocessor.GroupedAggregateRegionObserver;
 import org.apache.phoenix.expression.Expression;
 import org.apache.phoenix.expression.function.ScalarFunction;
 import org.apache.phoenix.schema.tuple.Tuple;
@@ -59,6 +60,41 @@ public class BinaryToInteger extends ScalarFunction {
 		super(children);
 		log.warn("Created BinaryToInteger instance");
 	}
+	
+	static final Charset UTF8 = Charset.forName("UTF8");
+	
+	public static byte[] getBytes(final ImmutableBytesWritable ptr) {
+		final int len = ptr.getLength();
+		final int offset = ptr.getOffset();
+		final byte[] bytes = ptr.get();
+		final byte[] b = new byte[len];
+		System.arraycopy(bytes, offset, b, 0, len);
+		return b;
+	}
+	
+	public static String printTuple(final Tuple tuple) {
+		final StringBuilder b = new StringBuilder("Tuple:");
+		b.append("\n\tSize:").append(tuple.size());
+		ImmutableBytesWritable ptr = new ImmutableBytesWritable();
+		tuple.getKey(ptr);
+		
+		b.append("\n\tKey:").append(new String(getBytes(ptr), UTF8));
+		for(int i = 0; i < tuple.size(); i++) {
+			
+			b.append("\n\t\tCell#").append(i).append(":");			
+			final Cell cell = tuple.getValue(i);
+			
+			b.append("\n\t\t(").append(cell.getClass().getName()).append(")");
+			b.append("\n\t\tTimestamp:[").append(new Date(cell.getTimestamp())).append("]");
+			b.append("\n\t\tFamily:").append(new String(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), UTF8));
+			b.append("\n\t\tQualfier:").append(new String(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength(), UTF8));
+			b.append("\n\t\tRow:[").append(new String(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength(), UTF8)).append("]");
+			b.append("\n\t\tValue:[").append(Arrays.toString(cell.getValueArray())).append("]");
+			b.append("\n\t\tTags:[").append(new String(cell.getTagsArray(), cell.getTagsOffset(), cell.getTagsLength(), UTF8)).append("]");
+			
+		}
+		return b.toString();
+	}
 
 	/**
 	 * {@inheritDoc}
@@ -66,9 +102,11 @@ public class BinaryToInteger extends ScalarFunction {
 	 */
 	@Override
 	public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
-		log.warn("Calling BinaryToInteger: {}", tuple);
+		log.warn("Tuple: {}", printTuple(tuple));
+		log.warn("Tuple: {}", tuple);
 		try {
 	        Expression arg = getChildren().get(0);
+	        log.warn("Arg: ({}): [{}]", arg.getClass().getName(), arg);
 	        if (!arg.evaluate(tuple, ptr)) {
 	            return false;
 	        }
@@ -81,7 +119,7 @@ public class BinaryToInteger extends ScalarFunction {
 	        		.wrap(ptr.get())
 	        		.asIntBuffer()
 	        		.get(0);
-	        log.warn("Int generated: {}", x);
+	        log.warn("Int generated: [{}], Ptr Length: [{}]", x, targetOffset);
 	        byte[] byteValue = getDataType().toBytes(x);
 	        ptr.set(byteValue);
 	        log.warn("Done");

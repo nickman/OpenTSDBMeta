@@ -71,10 +71,14 @@ public class BinaryToIntegerTest {
     	try {
     		Class.forName("org.apache.phoenix.jdbc.PhoenixDriver");
     		Properties p = new Properties();
-    		System.setProperty("phoenix.functions.allowUserDefinedFunctions", "true");
     		p.setProperty("phoenix.functions.allowUserDefinedFunctions", "true");
+    		p.setProperty("hbase.tmp.dir", "/tmp/hbase-nwhitehead/hbase");
+    		p.setProperty("hbase.rootdir", "/home/nwhitehead/services/hbase/hbase-0.98.13-hadoop2");
+    		p.setProperty("hbase.dynamic.jars.dir", "/home/nwhitehead/services/hbase/hbase-0.98.13-hadoop2/lib");
     		conn = DriverManager.getConnection("jdbc:phoenix:localhost", p);
-    		ps = conn.prepareStatement("select PK, BINTOINT(\"tagv\") from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+//    		conn = DriverManager.getConnection("jdbc:phoenix:192.168.1.161:2181", p);
+    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\", 0, 3) from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+//    		ps = conn.prepareStatement("select BINTOINT(PK) from \"tsdb\" LIMIT 3");
     		ps.setString(1, "/proc");
     		rset = ps.executeQuery();
     		ResultSetMetaData rsmd = rset.getMetaData();
@@ -83,8 +87,25 @@ public class BinaryToIntegerTest {
     			log(String.format("Col #%s: Name: [%s], Type: [%s]", i, rsmd.getColumnName(i), rsmd.getColumnTypeName(i)));
     		}
     		while(rset.next()) {
+//    		log("tagv: [" + rset.getObject(2) + "]");
+    			log("PK: [" + rset.getObject(1) + "]");
     			log("tagv: [" + rset.getObject(2) + "]");
+    		}    		
+    		rset.close();
+    		ps.close();
+    		log("====================================================================");
+    		ps = conn.prepareStatement("select BINTOINT(PK) from \"tsdb\" LIMIT 3");
+//    		ps.setString(1, "/proc");
+    		rset = ps.executeQuery();
+    		rsmd = rset.getMetaData();
+    		cnt = 1;
+    		for(int i = 1; i < rsmd.getColumnCount() + 1; i++) {
+    			log(String.format("Col #%s: Name: [%s], Type: [%s]", i, rsmd.getColumnName(i), rsmd.getColumnTypeName(i)));
     		}
+    		rset.close();
+    		ps.close();
+    		log("====================================================================");
+    		
     	} catch (Exception ex) {
     		ex.printStackTrace(System.err);
     	} finally {
