@@ -203,11 +203,15 @@ public class OpenTSDBFunctions {
 			final List<Object> results = new ArrayList<Object>(size);
 			for(Expression expr: children) {
 				if(!expr.evaluate(tuple, ptr)) {
-					break;
+					results.add(null);
+					continue;
 				} 
-				PDataType<?> pd = expr.getDataType();
-				XX  Need to get Offset HERE !!!
-				results.add(pd.toObject(ptr.get()));
+				final PDataType<?> pd = expr.getDataType();
+				final int len = ptr.getLength();
+				final int offset = ptr.getOffset();
+				final byte[] b = new byte[len];
+				System.arraycopy(ptr.get(), offset, b, 0, len);
+				results.add(pd.toObject(b));
 				expr.reset();
 			}
 			return results;

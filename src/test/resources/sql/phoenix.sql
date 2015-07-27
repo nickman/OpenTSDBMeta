@@ -39,7 +39,7 @@ select * from SYSTEM."FUNCTION"
 --CREATE FUNCTION bintoint(varbinary) returns integer as 'com.heliosapm.phoenix.udf.BinaryToInteger'
 CREATE FUNCTION TOINT(varbinary) returns integer as 'com.heliosapm.phoenix.udf.OpenTSDBFunctions$ToInt'
 
-CREATE FUNCTION TOHEX(varbinary) returns integer as 'com.heliosapm.phoenix.udf.OpenTSDBFunctions$ToHex'
+CREATE FUNCTION TOHEX(varbinary, integer, integer) returns varchar as 'com.heliosapm.phoenix.udf.OpenTSDBFunctions$ToHex'
 
 -- com.heliosapm.phoenix.udf.OpenTSDBFunctions.ToInt
 
