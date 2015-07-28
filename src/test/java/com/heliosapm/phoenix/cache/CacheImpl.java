@@ -30,10 +30,12 @@ import org.mapdb.DBMaker;
 import org.mapdb.Fun.Function1;
 import org.mapdb.TxBlock;
 import org.mapdb.TxMaker;
+import org.mapdb.TxRollbackException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.heliosapm.phoenix.cache.CachedTSMeta.CachedTSMetaSerializer;
+import com.heliosapm.phoenix.cache.CachedTSMeta.StringSerializer;
 
 /**
  * <p>Title: CacheImpl</p>
@@ -83,10 +85,18 @@ public class CacheImpl implements Closeable {
 		DBMaker.Maker dbMaker = DBMaker.fileDB(this.dbFile).fileMmapEnableIfSupported();
 				//DBMaker.newFileDB(this.dbFile).mmapFileEnableIfSupported();
 		txMaker = dbMaker.makeTxMaker();
-		final DB db = txMaker.makeTx();
-		db.treeMapCreate(TSMETA_NAME).comparator(CachedTSMetaSerializer.INSTANCE).keySerializer(BTreeKeySerializer.STRING).valueSerializer(CachedTSMetaSerializer.INSTANCE).makeOrGet();		
+		final DB db = txMaker.makeTx();		
+//		final DB db = dbMaker.make();
+		db.treeMapCreate(TSMETA_NAME)
+			.comparator(StringSerializer.INSTANCE)			
+			.keySerializer(BTreeKeySerializer.STRING)
+			.valueSerializer(CachedTSMetaSerializer.INSTANCE)			
+			.makeOrGet();	
+		db.commit();
 		db.close();
+		txMaker.close();
 		this.dbMaker = dbMaker;
+		
 	}
 
 	/**
@@ -98,7 +108,7 @@ public class CacheImpl implements Closeable {
 	}
 	
 	public BTreeMap<String, CachedTSMeta> getTSMetaCache() {
-		final DB db =  txMaker.makeTx();
+		final DB db =  dbMaker.makeTxMaker().makeTx();
 		return db.treeMap(TSMETA_NAME);
 	}
 
@@ -108,7 +118,11 @@ public class CacheImpl implements Closeable {
 	 * @see org.mapdb.TxMaker#makeTx()
 	 */
 	public DB makeTx() {
-		return txMaker.makeTx();
+		return dbMaker.makeTxMaker().makeTx();		
+	}
+	
+	public TxMaker makeTxMaker() {
+		return dbMaker.makeTxMaker();
 	}
 
 	/**
@@ -125,7 +139,24 @@ public class CacheImpl implements Closeable {
 	 * @see org.mapdb.TxMaker#execute(org.mapdb.TxBlock)
 	 */
 	public void execute(TxBlock txBlock) {
-		txMaker.execute(txBlock);
+		final TxMaker tx = dbMaker.makeTxMaker();
+		tx.execute(txBlock);
+		tx.close();
+		//.execute(txBlock);		
+	}
+	
+	public void clearTSMetas() {
+		execute(new TxBlock(){
+			/**
+			 * {@inheritDoc}
+			 * @see org.mapdb.TxBlock#tx(org.mapdb.DB)
+			 */
+			@Override
+			public void tx(final DB db) throws TxRollbackException {
+				db.treeMap(TSMETA_NAME).clear();
+				
+			}
+		});
 	}
 
 	/**

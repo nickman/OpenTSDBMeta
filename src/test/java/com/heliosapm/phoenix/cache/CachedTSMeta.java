@@ -21,6 +21,7 @@ package com.heliosapm.phoenix.cache;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
+import java.io.Serializable;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,6 +29,9 @@ import java.util.Comparator;
 import java.util.Map;
 import java.util.TreeMap;
 
+import javax.print.DocFlavor.BYTE_ARRAY;
+
+import org.mapdb.BTreeKeySerializer;
 import org.mapdb.Serializer;
 
 /**
@@ -38,7 +42,9 @@ import org.mapdb.Serializer;
  * <p><code>com.heliosapm.phoenix.cache.CachedTSMeta</code></p>
  */
 
-public class CachedTSMeta {
+public class CachedTSMeta implements Serializable  {
+	/**  */
+	private static final long serialVersionUID = -1155830449610616368L;
 	/** The TSMeta metric name */
 	final String metric;
 	/** The TSMeta tags */
@@ -87,19 +93,52 @@ public class CachedTSMeta {
 	/**
 	 * Creates a new CachedTSMeta
 	 * @param in The DataInput to read the meta from
+	 * @param available The number of bytes available
 	 * @throws IOException thrown on any input error
 	 */
-	private CachedTSMeta(final DataInput in) throws IOException {
-		final int tsuidlen = in.readInt();
-		tsuid = new byte[tsuidlen];
-		in.readFully(tsuid);
+	private CachedTSMeta(final DataInput in, final int available) throws IOException {
+		tsuid = Serializer.BYTE_ARRAY.deserialize(in, available);
 		this.tsuidHex = printHexBinary(this.tsuid);
-		metric = in.readUTF();
-		final int tagSize = in.readInt();
+		metric = Serializer.STRING.deserialize(in, available);
+		final int tagSize = Serializer.INTEGER.deserialize(in, available);
 		tags = new TreeMap<String, String>();
 		for(int i = 0; i < tagSize; i++) {
-			tags.put(in.readUTF(), in.readUTF());
+			final String k = Serializer.STRING.deserialize(in, available);
+			final String v = Serializer.STRING.deserialize(in, available);
+			tags.put(k,v);
 		}
+	}
+	
+	public static class StringSerializer extends Serializer<String> implements Comparator<String>  {
+		public static final StringSerializer INSTANCE = new StringSerializer();
+
+		/**
+		 * {@inheritDoc}
+		 * @see org.mapdb.Serializer#deserialize(java.io.DataInput, int)
+		 */
+		@Override
+		public String deserialize(final DataInput in, final int available) throws IOException {
+			return in.readUTF();
+		}
+		
+		/**
+		 * {@inheritDoc}
+		 * @see org.mapdb.Serializer#serialize(java.io.DataOutput, java.lang.Object)
+		 */
+		@Override
+		public void serialize(final DataOutput out, final String value) throws IOException {
+			out.writeUTF(value);
+		}
+
+		/**
+		 * {@inheritDoc}
+		 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
+		 */
+		@Override
+		public int compare(String o1, String o2) {
+			return o1.compareTo(o2);
+		}
+		
 	}
 	
 	/**
@@ -109,27 +148,38 @@ public class CachedTSMeta {
 	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
 	 * <p><code>com.heliosapm.phoenix.cache.CachedTSMeta.CachedTSMetaSerializer</code></p>
 	 */
-	public static class CachedTSMetaSerializer extends Serializer<CachedTSMeta> implements Comparator<CachedTSMeta> {
+	public static class CachedTSMetaSerializer extends Serializer<CachedTSMeta> implements Comparator<CachedTSMeta>, Serializable {
+		/**  */
+		private static final long serialVersionUID = 5705291847606951440L;
 		/** A UTF8 character set */
 		public static final Charset UTF8 = Charset.forName("UTF8");
 		/** A reusable instance */
 		public static final CachedTSMetaSerializer INSTANCE = new CachedTSMetaSerializer();
+
+		/**
+		 * {@inheritDoc}
+		 * @see org.mapdb.Serializer#getBTreeKeySerializer(java.util.Comparator)
+		 */
+		@Override
+		public BTreeKeySerializer getBTreeKeySerializer(final Comparator comparator) {
+			return new BTreeKeySerializer.BasicKeySerializer(StringSerializer.INSTANCE, comparator);
+			
+		}
 		
 		@Override
 		public void serialize(final DataOutput out, final CachedTSMeta value) throws IOException {
-			out.write(value.tsuid.length);
-			out.write(value.tsuid);
-			out.writeUTF(value.metric);			
-			out.writeInt(value.tags.size());
+			BYTE_ARRAY.serialize(out, value.tsuid);
+			STRING.serialize(out, value.metric);
+			INTEGER.serialize(out, value.tags.size());			
 			for(final Map.Entry<String, String> entry: value.tags.entrySet()) {
-				out.writeUTF(entry.getKey());
-				out.writeUTF(entry.getValue());
-			}
+				STRING.serialize(out, entry.getKey());
+				STRING.serialize(out, entry.getValue());
+			}			
 		}
 
 		@Override
 		public CachedTSMeta deserialize(final DataInput in, final int available) throws IOException {
-			return available==0 ? null : new CachedTSMeta(in);
+			return available==0 ? null : new CachedTSMeta(in, available);
 		}
 
 		@Override
