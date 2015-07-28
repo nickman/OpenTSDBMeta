@@ -115,6 +115,34 @@ public class OpenTSDBFunctions {
 		}
 		
 //		protected abstract boolean eval(final Tuple tuple, final ImmutableBytesWritable ptr);
+		
+		/**
+		 * Parses the arguments passed on a UDF invocation
+		 * @param tuple The incoming tuple
+		 * @param ptr The incoming bytes pointer
+		 * @return a list of extracted objects
+		 */
+		public List<Object> parseArguments(final Tuple tuple, final ImmutableBytesWritable ptr) {
+			final List<Expression> children = getChildren();
+			final int size = children.size();
+			if(size==0) return Collections.emptyList();
+			final List<Object> results = new ArrayList<Object>(size);
+			for(Expression expr: children) {
+				if(!expr.evaluate(tuple, ptr)) {
+					results.add(null);
+					continue;
+				} 
+				final PDataType<?> pd = expr.getDataType();
+				final int len = ptr.getLength();
+				final int offset = ptr.getOffset();
+				final byte[] b = new byte[len];
+				System.arraycopy(ptr.get(), offset, b, 0, len);
+				results.add(pd.toObject(b));
+				expr.reset();
+			}
+			return results;
+		}
+		
 
 		/**
 		 * {@inheritDoc}
@@ -196,26 +224,6 @@ public class OpenTSDBFunctions {
 		}
 		
 		
-		public List<Object> parseArguments(final Tuple tuple, final ImmutableBytesWritable ptr) {
-			final List<Expression> children = getChildren();
-			final int size = children.size();
-			if(size==0) return Collections.emptyList();
-			final List<Object> results = new ArrayList<Object>(size);
-			for(Expression expr: children) {
-				if(!expr.evaluate(tuple, ptr)) {
-					results.add(null);
-					continue;
-				} 
-				final PDataType<?> pd = expr.getDataType();
-				final int len = ptr.getLength();
-				final int offset = ptr.getOffset();
-				final byte[] b = new byte[len];
-				System.arraycopy(ptr.get(), offset, b, 0, len);
-				results.add(pd.toObject(b));
-				expr.reset();
-			}
-			return results;
-		}
 		
 		private static final byte[] EMPTY_STR = "".getBytes(UTF8); 
 		
@@ -226,30 +234,30 @@ public class OpenTSDBFunctions {
 		@Override
 		public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
 			final List<Object> args = parseArguments(tuple, ptr);
-   // =============================================
-      final byte[] input = (byte[])args.get(0);
+			// =============================================
+			final byte[] input = (byte[])args.get(0);
 			final Integer argOffset = (Integer)args.get(1);
-      final Integer argLength = (Integer)args.get(2);
-      // =============================================
-      if(input==null || input.length==0) {
-      	ptr.set(EMPTY_STR);
-      } else {
-      	if(argOffset!=null) {
-      		if(argLength!=null) {
-      			final byte[] b = new byte[argLength];
-      			System.arraycopy(input, argOffset, b, 0, argLength);
-      			ptr.set(printHexBinary(b).getBytes(UTF8));
-      		} else {
-      			final int actualLen = input.length - argOffset;
-      			final byte[] b = new byte[actualLen];
-      			System.arraycopy(input, argOffset, b, 0, actualLen);      			
-      			ptr.set(printHexBinary(b).getBytes(UTF8));
-      		}
-      	} else {
-      		ptr.set(printHexBinary(input).getBytes(UTF8));
-      	}
-      }
-      return true; 
+			final Integer argLength = (Integer)args.get(2);
+			// =============================================
+			if(input==null || input.length==0) {
+				ptr.set(EMPTY_STR);
+			} else {
+				if(argOffset!=null) {
+					if(argLength!=null) {
+						final byte[] b = new byte[argLength];
+						System.arraycopy(input, argOffset, b, 0, argLength);
+						ptr.set(printHexBinary(b).getBytes(UTF8));
+					} else {
+						final int actualLen = input.length - argOffset;
+						final byte[] b = new byte[actualLen];
+						System.arraycopy(input, argOffset, b, 0, actualLen);      			
+						ptr.set(printHexBinary(b).getBytes(UTF8));
+					}
+				} else {
+					ptr.set(printHexBinary(input).getBytes(UTF8));
+				}
+			}
+			return true; 
 		}				
 	}
 	

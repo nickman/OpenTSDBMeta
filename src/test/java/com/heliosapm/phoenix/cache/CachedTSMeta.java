@@ -26,12 +26,15 @@ import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.TreeMap;
 
-import javax.print.DocFlavor.BYTE_ARRAY;
+import javax.xml.bind.DatatypeConverter;
 
-import org.mapdb.BTreeKeySerializer;
+import net.opentsdb.uid.UniqueId;
+
 import org.mapdb.Serializer;
 
 /**
@@ -55,24 +58,7 @@ public class CachedTSMeta implements Serializable  {
 	final transient String tsuidHex;
 	
 
-	/** Hex decode characters */
-  private static final char[] hexCode = "0123456789ABCDEF".toCharArray();
-
-  /**
-   * Returns the passed byte array in Hex string format
-   * @param data The bytes to format
-   * @return the hex string
-   */
-  public static String printHexBinary(byte[] data) {
-  	if(data==null || data.length==0) return "";
-      StringBuilder r = new StringBuilder(data.length*2);
-      for ( byte b : data) {
-          r.append(hexCode[(b >> 4) & 0xF]);
-          r.append(hexCode[(b & 0xF)]);
-      }
-      return r.toString();
-  }
-
+	public static int TS_UID_SIZE = 3;
 	
 	/**
 	 * Creates a new CachedTSMeta
@@ -87,7 +73,7 @@ public class CachedTSMeta implements Serializable  {
 		this.metric = metric.trim();
 		this.tags = Collections.unmodifiableSortedMap(new TreeMap<String, String>(tags));
 		this.tsuid = tsuid;
-		this.tsuidHex = printHexBinary(this.tsuid);
+		this.tsuidHex = DatatypeConverter.printHexBinary(this.tsuid);
 	}
 	
 	/**
@@ -98,7 +84,7 @@ public class CachedTSMeta implements Serializable  {
 	 */
 	private CachedTSMeta(final DataInput in, final int available) throws IOException {
 		tsuid = Serializer.BYTE_ARRAY.deserialize(in, available);
-		this.tsuidHex = printHexBinary(this.tsuid);
+		this.tsuidHex = DatatypeConverter.printHexBinary(this.tsuid);
 		metric = Serializer.STRING.deserialize(in, available);
 		final int tagSize = Serializer.INTEGER.deserialize(in, available);
 		tags = new TreeMap<String, String>();
@@ -109,37 +95,6 @@ public class CachedTSMeta implements Serializable  {
 		}
 	}
 	
-	public static class StringSerializer extends Serializer<String> implements Comparator<String>  {
-		public static final StringSerializer INSTANCE = new StringSerializer();
-
-		/**
-		 * {@inheritDoc}
-		 * @see org.mapdb.Serializer#deserialize(java.io.DataInput, int)
-		 */
-		@Override
-		public String deserialize(final DataInput in, final int available) throws IOException {
-			return in.readUTF();
-		}
-		
-		/**
-		 * {@inheritDoc}
-		 * @see org.mapdb.Serializer#serialize(java.io.DataOutput, java.lang.Object)
-		 */
-		@Override
-		public void serialize(final DataOutput out, final String value) throws IOException {
-			out.writeUTF(value);
-		}
-
-		/**
-		 * {@inheritDoc}
-		 * @see java.util.Comparator#compare(java.lang.Object, java.lang.Object)
-		 */
-		@Override
-		public int compare(String o1, String o2) {
-			return o1.compareTo(o2);
-		}
-		
-	}
 	
 	/**
 	 * <p>Title: CachedTSMetaSerializer</p>
@@ -156,15 +111,6 @@ public class CachedTSMeta implements Serializable  {
 		/** A reusable instance */
 		public static final CachedTSMetaSerializer INSTANCE = new CachedTSMetaSerializer();
 
-		/**
-		 * {@inheritDoc}
-		 * @see org.mapdb.Serializer#getBTreeKeySerializer(java.util.Comparator)
-		 */
-		@Override
-		public BTreeKeySerializer getBTreeKeySerializer(final Comparator comparator) {
-			return new BTreeKeySerializer.BasicKeySerializer(StringSerializer.INSTANCE, comparator);
-			
-		}
 		
 		@Override
 		public void serialize(final DataOutput out, final CachedTSMeta value) throws IOException {
@@ -186,7 +132,32 @@ public class CachedTSMeta implements Serializable  {
 		public int compare(final CachedTSMeta o1, final CachedTSMeta o2) {
 			return o1.tsuidHex.compareTo(o2.tsuidHex);
 		}
+	}
+	
+	/**
+	 * Returns an ordered set of the CachedUIDMetas in this CachedTSMeta
+	 * @return an ordered set of CachedUIDMetas 
+	 */
+	public LinkedHashSet<CachedUIDMeta> getUIDMetas() {
+		final int size = tags.size() + 1;
+		final LinkedHashSet<CachedUIDMeta> uids = new LinkedHashSet<CachedUIDMeta>(size);
+		uids.add(new CachedUIDMeta(metric, getSubArray(0), UniqueId.UniqueIdType.METRIC));
+		Map.Entry<String, String>[] pairs = tags.entrySet().toArray(new Map.Entry[tags.size()]);
 		
+		final Iterator<byte[]> uidIter = UniqueId.getTagsFromTSUID(tsuidHex).iterator();
+		
+		for(int i = 0; i < pairs.length; i++) {
+			Map.Entry<String, String> entry = pairs[i]; 
+			uids.add(new CachedUIDMeta(entry.getKey(), uidIter.next(), UniqueId.UniqueIdType.TAGK));
+			uids.add(new CachedUIDMeta(entry.getValue(), uidIter.next(), UniqueId.UniqueIdType.TAGV));
+		}
+		return uids;
+	}
+	
+	private byte[] getSubArray(final int uidseq) {
+		final byte[] b = new byte[TS_UID_SIZE];
+		System.arraycopy(tsuid, (uidseq * TS_UID_SIZE), b, 0, TS_UID_SIZE);
+		return b;
 	}
 
 	/**

@@ -29,8 +29,10 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.TreeMap;
 
 import javax.management.ObjectName;
 
@@ -125,7 +127,11 @@ public class CacheLoadTest {
 				final byte[] bytes = UniqueId.stringToUid(tsuid);
 				final ObjectName on = new ObjectName(fqn);
 //				log.info("TSMETA:  [{}], tsuid: [{}}", fqn, Arrays.toString(stringToUid(tsuid)));
-				final CachedTSMeta ctm = new CachedTSMeta(on.getDomain(), on.getKeyPropertyList(), bytes);
+				
+				final CachedTSMeta ctm = new CachedTSMeta(on.getDomain(), new TreeMap<String, String>(on.getKeyPropertyList()), bytes);
+				final CachedUIDMeta[] uids = ctm.getUIDMetas().toArray(new CachedUIDMeta[0]);
+				log.info("CachedTSMeta: [{}]", ctm);
+				log.info("UIDs: {}", Arrays.toString(uids));
 				cnt++;
 				ctms.add(ctm);
 			}
@@ -174,9 +180,9 @@ public class CacheLoadTest {
 		try {
 			log.info("Cache Load Test");
 			CacheLoadTest clt = new CacheLoadTest();
-			clt.load(15000);
-			delStore();
-			clt.load(15000);
+			clt.load(100);
+//			delStore();
+//			clt.load(15000);
 		} finally {
 			bigGc();
 			delStore();

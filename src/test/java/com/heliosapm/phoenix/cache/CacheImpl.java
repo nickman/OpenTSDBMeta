@@ -20,11 +20,12 @@ package com.heliosapm.phoenix.cache;
 
 import java.io.Closeable;
 import java.io.File;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
 
 import org.mapdb.BTreeKeySerializer;
-import org.mapdb.BTreeMap;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Fun.Function1;
@@ -34,8 +35,9 @@ import org.mapdb.TxRollbackException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.primitives.SignedBytes;
 import com.heliosapm.phoenix.cache.CachedTSMeta.CachedTSMetaSerializer;
-import com.heliosapm.phoenix.cache.CachedTSMeta.StringSerializer;
+import com.heliosapm.phoenix.cache.CachedUIDMeta.CachedUIDMetaSerializer;
 
 /**
  * <p>Title: CacheImpl</p>
@@ -49,8 +51,14 @@ public class CacheImpl implements Closeable {
 	private static final Logger log = LoggerFactory .getLogger(CacheImpl.class);
 	private static final Map<String, CacheImpl> dbs = new ConcurrentHashMap<String, CacheImpl>();
 	
-	/** The name of the CacheTSMeta set */
+	/** The name of the CacheTSMeta map */
 	public static final String TSMETA_NAME = "tsmeta";
+	/** The name of the TagK map */
+	public static final String TAGK_NAME = "tagk";
+	/** The name of the TagV map */
+	public static final String TAGV_NAME = "tagv";
+	/** The name of the Metric map */
+	public static final String METRIC_NAME = "metric";
 	
 	final File dbFile;
 	final DBMaker.Maker dbMaker;
@@ -74,6 +82,15 @@ public class CacheImpl implements Closeable {
 		return ci;
 	}
 	
+	final static Comparator<String> STRING_COMPARATOR = new Comparator<String>() {
+		@Override
+		public int compare(final String o1, final String o2) {
+			return o1.compareTo(o2);
+		}		
+	};
+	final static Comparator<byte[]> BYTEARR_COMPARATOR = SignedBytes.lexicographicalComparator();
+	
+	
 	/**
 	 * Creates a new CacheImpl
 	 * @param dbFile The file where the cache will be persisted
@@ -93,10 +110,28 @@ public class CacheImpl implements Closeable {
 		final DB db = txMaker.makeTx();		
 //		final DB db = dbMaker.make();
 		db.treeMapCreate(TSMETA_NAME)
-			.comparator(StringSerializer.INSTANCE)			
+			.comparator(STRING_COMPARATOR)			
 			.keySerializer(BTreeKeySerializer.STRING)
 			.valueSerializer(CachedTSMetaSerializer.INSTANCE)			
 			.makeOrGet();	
+		db.treeMapCreate(TAGK_NAME)
+			.comparator(STRING_COMPARATOR)			
+			.keySerializer(BTreeKeySerializer.STRING)
+			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+			.makeOrGet();	
+		db.treeMapCreate(TAGV_NAME)
+			.comparator(STRING_COMPARATOR)			
+			.keySerializer(BTreeKeySerializer.STRING)
+			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+			.makeOrGet();	
+		db.treeMapCreate(METRIC_NAME)
+			.comparator(STRING_COMPARATOR)			
+			.keySerializer(BTreeKeySerializer.STRING)
+			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+			.makeOrGet();	
+		
+		
+		
 		db.commit();
 		db.close();
 		txMaker.close();
@@ -112,9 +147,10 @@ public class CacheImpl implements Closeable {
 
 	}
 	
-	public BTreeMap<byte[], CachedTSMeta> getTSMetaCache() {
+	@SuppressWarnings("unchecked")
+	public <K, T, M extends ConcurrentNavigableMap<K, T> & Closeable> M  getTSMetaCache() {
 		final DB db =  dbMaker.makeTxMaker().makeTx();
-		return db.treeMap(TSMETA_NAME);
+		return (M) db.treeMap(TSMETA_NAME);
 	}
 
 	/**
