@@ -57,7 +57,7 @@ public class CacheLoadTest {
 	private static final Logger log = LoggerFactory .getLogger(CacheLoadTest.class);
 	public static final String JDBC_DRIVER = "org.h2.Driver";
 	public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
-	public static final String FILE_NAME = "C:\\temp\\tsmeta.db";
+	public static final String FILE_NAME = System.getProperty("java.io.tmpdir") + File.separator + "tsmeta.db";
 	
 	Connection conn = null;
 	PreparedStatement ps = null;
@@ -135,13 +135,22 @@ public class CacheLoadTest {
 			for(CachedTSMeta c: ctms) {
 				map.put(c.getTsuidHex(), c);
 			}
+			summary = et.printAvg("Cache Saves", cnt);
+
+			log.info("Cache Saved [{}] TSMetas to Cache. Elapsed: {}", cnt, summary );
+			et = SystemClock.startClock();
+			for(CachedTSMeta ct: ctms) {
+				CachedTSMeta lookedUp = map.get(ct.getTsuidHex());
+				if(!lookedUp.equals(ct)) throw new RuntimeException("Mismatch between cached:\n\t[" + ct + "] and looked up:\n\t[" + lookedUp + "]");
+			}			
+			summary = et.printAvg("Cache Lookups", cnt);
+			log.info("Cache Lookups Elapsed: {}", summary );
+			
 			map.close(); map = null;
 			db.commit();
 			db.close();
 			db = null;
 			tx.close();
-			summary = et.printAvg("Cache Saves", cnt);
-			log.info("Cache Saved [{}] TSMetas to Cache. Elapsed: {}", cnt, summary );
 		} catch (Exception ex) {
 			
 			throw new RuntimeException(ex);
@@ -166,9 +175,7 @@ public class CacheLoadTest {
 			log.info("Cache Load Test");
 			CacheLoadTest clt = new CacheLoadTest();
 			clt.load(15000);
-			bigGc();
-			CacheImpl.getInstance(FILE_NAME).clearTSMetas();
-			bigGc();
+			delStore();
 			clt.load(15000);
 		} finally {
 			bigGc();

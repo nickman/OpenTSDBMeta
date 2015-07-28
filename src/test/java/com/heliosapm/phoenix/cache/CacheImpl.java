@@ -81,9 +81,14 @@ public class CacheImpl implements Closeable {
 	private CacheImpl(final File dbFile) {
 		this.dbFile = dbFile;
 		final String arch = System.getProperty("os.arch","noarch");
+		final String os = System.getProperty("os.name","").toLowerCase();
+		final boolean isWin = os.contains("windows");
+		log.info("IsWindows: {}", isWin);
 		arch64bit = arch.contains("64");
-		DBMaker.Maker dbMaker = DBMaker.fileDB(this.dbFile).fileMmapEnableIfSupported();
-				//DBMaker.newFileDB(this.dbFile).mmapFileEnableIfSupported();
+		DBMaker.Maker dbMaker = DBMaker.fileDB(this.dbFile);
+		if(!isWin) dbMaker = dbMaker.fileMmapEnableIfSupported();
+		dbMaker = dbMaker.cacheSize(20000);
+		
 		txMaker = dbMaker.makeTxMaker();
 		final DB db = txMaker.makeTx();		
 //		final DB db = dbMaker.make();
@@ -107,7 +112,7 @@ public class CacheImpl implements Closeable {
 
 	}
 	
-	public BTreeMap<String, CachedTSMeta> getTSMetaCache() {
+	public BTreeMap<byte[], CachedTSMeta> getTSMetaCache() {
 		final DB db =  dbMaker.makeTxMaker().makeTx();
 		return db.treeMap(TSMETA_NAME);
 	}
