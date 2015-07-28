@@ -16,7 +16,8 @@
  		<phoenix.version>4.4.0-HBase-0.98</phoenix.version>
  		<junit.version>4.12</junit.version>
 		<jmx-optional.version>1.0-b02</jmx-optional.version>
-		<helios.version>1.0-SNAPSHOT</helios.version>		
+		<helios.version>1.0-SNAPSHOT</helios.version>
+		<mapdb.version>2.0-beta3</mapdb.version>  <!-- 1.0.8 -->		
 		<!-- Plugin Versions -->
 		<jar-plugin.version>2.3</jar-plugin.version>
 		<source-plugin.version>2.2</source-plugin.version>
@@ -51,6 +52,14 @@
 			<artifactId>heliosutils</artifactId>
 			<version>${helios.version}</version>
 		</dependency>
+		
+		<!-- MAPDB for Caching -->
+		<dependency>
+		   <groupId>org.mapdb</groupId>
+		   <artifactId>mapdb</artifactId>
+		   <version>${mapdb.version}</version>
+		</dependency>
+		
 
 		<!--   THE BEST-EST JMX PROTOCOL   -->
         <dependency>

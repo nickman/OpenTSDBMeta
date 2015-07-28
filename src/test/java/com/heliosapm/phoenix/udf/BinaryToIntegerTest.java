@@ -77,7 +77,9 @@ public class BinaryToIntegerTest {
     		p.setProperty("hbase.dynamic.jars.dir", "/home/nwhitehead/services/hbase/hbase-0.98.13-hadoop2/lib");
     		conn = DriverManager.getConnection("jdbc:phoenix:localhost", p);
 //    		conn = DriverManager.getConnection("jdbc:phoenix:192.168.1.161:2181", p);
-    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\", 0, 3) from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+//    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\", 0, 3) from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\") from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+//    		ps = conn.prepareStatement("SELECT PK, tohex(PK, 0, 3) from \"tsdb\""); 
 //    		ps = conn.prepareStatement("select BINTOINT(PK) from \"tsdb\" LIMIT 3");
     		ps.setString(1, "/proc");
     		rset = ps.executeQuery();
@@ -94,15 +96,13 @@ public class BinaryToIntegerTest {
     		rset.close();
     		ps.close();
     		log("====================================================================");
-    		ps = conn.prepareStatement("select BINTOINT(PK) from \"tsdb\" LIMIT 3");
-//    		ps.setString(1, "/proc");
-    		rset = ps.executeQuery();
-    		rsmd = rset.getMetaData();
-    		cnt = 1;
-    		for(int i = 1; i < rsmd.getColumnCount() + 1; i++) {
-    			log(String.format("Col #%s: Name: [%s], Type: [%s]", i, rsmd.getColumnName(i), rsmd.getColumnTypeName(i)));
-    		}
-    		rset.close();
+    		ps = conn.prepareStatement("UPSERT INTO TAGVTX select PK, TOHEX(\"id\".\"tagv\", 0, 3) from \"tsdb-uid\" where \"id\".\"tagv\" is not null limit 1000");
+    		int rowsMod = ps.executeUpdate();
+    		log("Rows Modified: " + rowsMod);
+//    		for(int i = 1; i < rsmd.getColumnCount() + 1; i++) {
+//    			log(String.format("Col #%s: Name: [%s], Type: [%s]", i, rsmd.getColumnName(i), rsmd.getColumnTypeName(i)));
+//    		}
+//    		rset.close();
     		ps.close();
     		log("====================================================================");
     		
