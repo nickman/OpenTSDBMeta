@@ -29,6 +29,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,7 +41,7 @@ import javax.xml.bind.DatatypeConverter;
 
 import net.opentsdb.uid.UniqueId;
 
-import org.mapdb.BTreeMap;
+import org.mapdb.HTreeMap;
 import org.mapdb.DB;
 import org.mapdb.TxMaker;
 import org.slf4j.Logger;
@@ -60,8 +61,8 @@ import com.heliosapm.utils.time.SystemClock.ElapsedTime;
 public class CacheLoadTest {
 	private static final Logger log = LoggerFactory .getLogger(CacheLoadTest.class);
 	public static final String JDBC_DRIVER = "org.h2.Driver";
-//	public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
-	public static final String JDBC_URL = "jdbc:h2:tcp://127.0.0.1:9092/tsdb";
+	public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
+//	public static final String JDBC_URL = "jdbc:h2:tcp://127.0.0.1:9092/tsdb";
 	
 	public static final String FILE_NAME = System.getProperty("java.io.tmpdir") + File.separator + "tsmeta.db";
 	
@@ -80,14 +81,14 @@ public class CacheLoadTest {
 		initDb();
 	}
 	
-	public CachedUIDMeta getName(final Connection conn, final UniqueId.UniqueIdType type, final String xuid) {
+	public CachedUIDMeta getName(final Connection conn, final UniqueId.UniqueIdType type, final String xuid, final HTreeMap<String, CachedUIDMeta> map) {
 		switch(type) {
 		case METRIC:
-			return getMetric(conn, xuid);
+			return getMetric(conn, xuid, map);
 		case TAGK:
-			return getTagK(conn, xuid);
+			return getTagK(conn, xuid, map);
 		case TAGV:
-			return getTagV(conn, xuid);
+			return getTagV(conn, xuid, map);
 		default:
 			throw new RuntimeException();
 			
@@ -97,32 +98,32 @@ public class CacheLoadTest {
 	final CacheImpl cache = CacheImpl.getInstance(FILE_NAME);
 	
 	
-	public CachedUIDMeta getTagK(final Connection conn, final String xuid) {
+	public CachedUIDMeta getTagK(final Connection conn, final String xuid, final HTreeMap<String, CachedUIDMeta> map) {
 		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.TAGK;
-		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		CachedUIDMeta cm = map.get(xuid);
 		if(cm==null) {			
 			cm = new CachedUIDMeta(getName(conn, TAGK_SQL, xuid), UniqueId.stringToUid(xuid), _type);
-			cache.putCachedUIDMeta(_type, cm);
+			map.put(xuid, cm);
 		}
 		return cm;
 	}
 	
-	public CachedUIDMeta getTagV(final Connection conn, final String xuid) {
+	public CachedUIDMeta getTagV(final Connection conn, final String xuid, final HTreeMap<String, CachedUIDMeta> map) {
 		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.TAGV;
-		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		CachedUIDMeta cm = map.get(xuid);
 		if(cm==null) {			
 			cm = new CachedUIDMeta(getName(conn, TAGV_SQL, xuid), UniqueId.stringToUid(xuid), _type);
-			cache.putCachedUIDMeta(_type, cm);
+			map.put(xuid, cm);
 		}
 		return cm;
 	}
 	
-	public CachedUIDMeta getMetric(final Connection conn, final String xuid) {
+	public CachedUIDMeta getMetric(final Connection conn, final String xuid, final HTreeMap<String, CachedUIDMeta> map) {
 		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.METRIC;
-		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		CachedUIDMeta cm = map.get(xuid);
 		if(cm==null) {			
 			cm = new CachedUIDMeta(getName(conn, METRIC_SQL, xuid), UniqueId.stringToUid(xuid), _type);
-			cache.putCachedUIDMeta(_type, cm);
+			map.put(xuid, cm);
 		}
 		return cm;
 	}
@@ -178,14 +179,20 @@ public class CacheLoadTest {
 	protected void load(final int max) {
 		TxMaker tx = null;
 		DB db = null;
-		BTreeMap<String, CachedTSMeta> map = null;
+		HTreeMap<String, CachedTSMeta> map = null;
+		HTreeMap<String, CachedUIDMeta> tagkMap = null;
+		HTreeMap<String, CachedUIDMeta> tagvMap = null;
+		HTreeMap<String, CachedUIDMeta> metricMap = null;
 		final Set<CachedTSMeta> ctms = new HashSet<CachedTSMeta>(max);
 		
 		try {
 			tx = CacheImpl.getInstance(FILE_NAME).makeTxMaker();
 			db = tx.makeTx();
 			log.info("tsmeta exists: {}", db.exists(CacheImpl.TSMETA_NAME));
-			map = db.treeMap(CacheImpl.TSMETA_NAME);
+			map = db.hashMap(CacheImpl.TSMETA_NAME);
+			tagkMap = db.hashMap(CacheImpl.TAGK_NAME);
+			tagvMap = db.hashMap(CacheImpl.TAGV_NAME);
+			metricMap = db.hashMap(CacheImpl.METRIC_NAME);
 			ElapsedTime et = SystemClock.startClock();
 			//417/378
 			//122/110
@@ -200,24 +207,23 @@ public class CacheLoadTest {
 				final String tsuid = rset.getString(2);
 				final byte[] bytes = UniqueId.stringToUid(tsuid);
 				final ObjectName on = new ObjectName(fqn);
-//				log.info("TSMETA:  [{}], tsuid: [{}}", fqn, Arrays.toString(stringToUid(tsuid)));
+//				log.info("TSMETA:  [{}], tsuid: [{}}", fqn, Arrays.toString(UniqueId.stringToUid(tsuid)));
 				
 				final CachedTSMeta ctm = new CachedTSMeta(on.getDomain(), new TreeMap<String, String>(on.getKeyPropertyList()), bytes);
 				byte[] metricBytes = new byte[3];
 				System.arraycopy(bytes, 0, metricBytes, 0, 3);
 				List<byte[]> uidBytes = UniqueId.getTagPairsFromTSUID(ctm.getTsuid());
-				log.info("Fetching Metas for TS {}", ctm);
+//				log.info("Fetching Metas for TS {}", ctm);
+				final ElapsedTime ex = SystemClock.startClock();
 				Set<CachedUIDMeta> cmetas = new LinkedHashSet<CachedUIDMeta>(uidBytes.size()+1);
-				cmetas.add(getName(conn, UniqueId.UniqueIdType.METRIC, DatatypeConverter.printHexBinary(metricBytes)));
+				cmetas.add(getName(conn, UniqueId.UniqueIdType.METRIC, DatatypeConverter.printHexBinary(metricBytes), metricMap));
 				for(byte[] b: uidBytes) {
 					final String pairBytes = DatatypeConverter.printHexBinary(b);
 					//log.info("Pairs: [{}]", pairBytes);
-					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGK, pairBytes.substring(0, 6)));
-					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGV, pairBytes.substring(6)));
+					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGK, pairBytes.substring(0, 6), tagkMap));
+					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGV, pairBytes.substring(6), tagvMap));
 				}
-//				final CachedUIDMeta[] uids = ctm.getUIDMetas().toArray(new CachedUIDMeta[0]);
-//				log.info("CachedTSMeta: [{}]", ctm);
-//				log.info("UIDs: {}", cmetas.toString());
+//				log.info("Meta Load Time: {}", ex.printAvg("Meta Lookups", cmetas.size()));
 				cnt++;
 				ctms.add(ctm);
 			}
@@ -268,6 +274,7 @@ public class CacheLoadTest {
 			log.info("Cache Load Test");
 			CacheLoadTest clt = new CacheLoadTest();
 			clt.load(15000);
+			CacheImpl.getInstance(FILE_NAME).reset();
 			delStore();
 			clt.load(15000);
 		} finally {

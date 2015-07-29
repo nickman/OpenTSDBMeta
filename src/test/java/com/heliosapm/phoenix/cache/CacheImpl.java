@@ -33,10 +33,11 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import net.opentsdb.uid.UniqueId;
 
 import org.mapdb.BTreeKeySerializer;
-import org.mapdb.BTreeMap;
+import org.mapdb.HTreeMap;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Fun.Function1;
+import org.mapdb.Serializer;
 import org.mapdb.TxBlock;
 import org.mapdb.TxMaker;
 import org.mapdb.TxRollbackException;
@@ -46,6 +47,7 @@ import org.slf4j.LoggerFactory;
 import com.google.common.primitives.SignedBytes;
 import com.heliosapm.phoenix.cache.CachedTSMeta.CachedTSMetaSerializer;
 import com.heliosapm.phoenix.cache.CachedUIDMeta.CachedUIDMetaSerializer;
+import com.heliosapm.utils.unsafe.UnsafeAdapter;
 
 /**
  * <p>Title: CacheImpl</p>
@@ -59,8 +61,8 @@ public class CacheImpl implements Closeable {
 	private static final Logger log = LoggerFactory .getLogger(CacheImpl.class);
 	private static final Map<String, CacheImpl> dbs = new ConcurrentHashMap<String, CacheImpl>();
 	public static final String JDBC_DRIVER = "org.h2.Driver";
-//public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
-	public static final String JDBC_URL = "jdbc:h2:tcp://127.0.0.1:9092/tsdb";
+public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
+//	public static final String JDBC_URL = "jdbc:h2:tcp://127.0.0.1:9092/tsdb";
 
 	/** The name of the CacheTSMeta map */
 	public static final String TSMETA_NAME = "tsmeta";
@@ -115,32 +117,46 @@ public class CacheImpl implements Closeable {
 		final boolean isWin = os.contains("windows");
 		log.info("IsWindows: {}", isWin);
 		arch64bit = arch.contains("64");
-		DBMaker.Maker dbMaker = DBMaker.fileDB(this.dbFile);
-		if(!isWin) dbMaker = dbMaker.fileMmapEnableIfSupported();
-		dbMaker = dbMaker.cacheSize(20000);
+		DBMaker.Maker dbMaker = DBMaker
+				.fileDB(this.dbFile);
+//		if(!isWin) 
+			dbMaker = dbMaker.fileMmapEnableIfSupported();
+		dbMaker = dbMaker.cacheLRUEnable().cacheSize(100000).cacheExecutorEnable();
 		
-		txMaker = dbMaker.makeTxMaker();
+		
+		
+		txMaker = dbMaker
+				.transactionDisable()
+				.makeTxMaker();
 		final DB db = txMaker.makeTx();		
 //		final DB db = dbMaker.make();
-		db.treeMapCreate(TSMETA_NAME)
-			.comparator(STRING_COMPARATOR)			
-			.keySerializer(BTreeKeySerializer.STRING)
-			.valueSerializer(CachedTSMetaSerializer.INSTANCE)			
+		db.hashMapCreate(TSMETA_NAME)
+//			.comparator(STRING_COMPARATOR)			
+//			.keySerializer(BTreeKeySerializer.STRING)
+			.keySerializer(Serializer.STRING)
+//			.valueSerializer(CachedTSMetaSerializer.INSTANCE)	
+			.valueSerializer(new Serializer.CompressionWrapper<CachedTSMeta>(CachedTSMetaSerializer.INSTANCE))
 			.makeOrGet();	
-		db.treeMapCreate(TAGK_NAME)
-			.comparator(STRING_COMPARATOR)			
-			.keySerializer(BTreeKeySerializer.STRING)
-			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+		db.hashMapCreate(TAGK_NAME)
+//			.comparator(STRING_COMPARATOR)			
+//			.keySerializer(BTreeKeySerializer.STRING)
+			.keySerializer(Serializer.STRING)
+//			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)
+			.valueSerializer(new Serializer.CompressionWrapper<CachedUIDMeta>(CachedUIDMetaSerializer.INSTANCE))
 			.makeOrGet();	
-		db.treeMapCreate(TAGV_NAME)
-			.comparator(STRING_COMPARATOR)			
-			.keySerializer(BTreeKeySerializer.STRING)
-			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+		db.hashMapCreate(TAGV_NAME)
+//			.comparator(STRING_COMPARATOR)			
+//			.keySerializer(BTreeKeySerializer.STRING)
+			.keySerializer(Serializer.STRING)
+//			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+			.valueSerializer(new Serializer.CompressionWrapper<CachedUIDMeta>(CachedUIDMetaSerializer.INSTANCE))
 			.makeOrGet();	
-		db.treeMapCreate(METRIC_NAME)
-			.comparator(STRING_COMPARATOR)			
-			.keySerializer(BTreeKeySerializer.STRING)
-			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+		db.hashMapCreate(METRIC_NAME)
+//			.comparator(STRING_COMPARATOR)			
+//			.keySerializer(BTreeKeySerializer.STRING)
+			.keySerializer(Serializer.STRING)
+//			.valueSerializer(CachedUIDMetaSerializer.INSTANCE)			
+			.valueSerializer(new Serializer.CompressionWrapper<CachedUIDMeta>(CachedUIDMetaSerializer.INSTANCE))
 			.makeOrGet();	
 		uidMapNames.put(UniqueId.UniqueIdType.TAGK, TAGK_NAME);
 		uidMapNames.put(UniqueId.UniqueIdType.TAGV, TAGV_NAME);
@@ -149,17 +165,21 @@ public class CacheImpl implements Closeable {
 		uidTableNames.put(UniqueId.UniqueIdType.TAGK, "TSD_TAGK");
 		uidTableNames.put(UniqueId.UniqueIdType.TAGV, "TSD_TAGV");
 		uidTableNames.put(UniqueId.UniqueIdType.METRIC, "TSD_METRIC");
-		
-		preLoad(UniqueId.UniqueIdType.TAGK);
-		log.info("Loaded TAGK");
-		preLoad(UniqueId.UniqueIdType.TAGV);
-		log.info("Loaded TAGV");
-		preLoad(UniqueId.UniqueIdType.METRIC);
-		log.info("Loaded METRIC");
-		
-		
+
 		db.commit();
 		db.close();
+
+		long start = System.currentTimeMillis();
+		long sz = preLoad(UniqueId.UniqueIdType.TAGK);
+		log.info("Loaded [{}] TAGK cache items in [{}] ms", sz, System.currentTimeMillis() - start);
+		start = System.currentTimeMillis();
+		sz = preLoad(UniqueId.UniqueIdType.TAGV);
+		log.info("Loaded [{}] TAGV cache items in [{}] ms", sz, System.currentTimeMillis() - start);
+		start = System.currentTimeMillis();
+		sz = preLoad(UniqueId.UniqueIdType.METRIC);
+		log.info("Loaded [{}] METRIC cache items in [{}] ms", sz, System.currentTimeMillis() - start);
+		
+		
 		//txMaker.close();
 		this.dbMaker = dbMaker;
 		
@@ -176,7 +196,7 @@ public class CacheImpl implements Closeable {
 	@SuppressWarnings("unchecked")
 	public <K, T, M extends ConcurrentNavigableMap<K, T> & Closeable> M  getTSMetaCache() {
 		final DB db =  dbMaker.makeTxMaker().makeTx();
-		return (M) db.treeMap(TSMETA_NAME);
+		return (M) db.hashMap(TSMETA_NAME);
 	}
 
 	/**
@@ -192,6 +212,11 @@ public class CacheImpl implements Closeable {
 	public TxMaker makeTxMaker() {
 		return txMaker;
 	}
+	
+	public void reset() {
+		dbs.remove(dbFile.getAbsolutePath());
+		close();
+	}
 
 	/**
 	 * Closes all resources for this DB
@@ -199,6 +224,7 @@ public class CacheImpl implements Closeable {
 	@Override
 	public void close() {
 		try { txMaker.close(); } catch (Exception x) {/* No Op */}
+		dbs.remove(dbFile.getAbsolutePath());
 	}
 
 	/**
@@ -222,8 +248,13 @@ public class CacheImpl implements Closeable {
 			DB tx = makeTx();
 			try{
 				final T t = txCall.tx(tx);
-				if(!tx.isClosed())
-					tx.commit();
+				if(!tx.isClosed()) {
+					try {
+						tx.commit();
+					} catch (Exception ex) {						
+						UnsafeAdapter.throwException(ex);
+					}
+				}
 				return t;
 			}catch(TxRollbackException e){
 				//failed, so try again
@@ -236,7 +267,7 @@ public class CacheImpl implements Closeable {
 		return execute(new TxCallable<Boolean>() {
 			@Override
 			public Boolean tx(final DB db) throws TxRollbackException {
-				final BTreeMap<String, CachedUIDMeta> map = db.treeMap(uidMapNames.get(type));
+				final HTreeMap<String, CachedUIDMeta> map = db.hashMap(uidMapNames.get(type));
 				try {
 					return map.containsKey(name);
 				} finally {
@@ -245,12 +276,14 @@ public class CacheImpl implements Closeable {
 			}
 		});
 	}
+	
+
 
 	public CachedUIDMeta getCachedUIDMeta(final UniqueId.UniqueIdType type, final String name) {
 		return execute(new TxCallable<CachedUIDMeta>() {
 			@Override
 			public CachedUIDMeta tx(final DB db) throws TxRollbackException {
-				final BTreeMap<String, CachedUIDMeta> map = db.treeMap(uidMapNames.get(type));
+				final HTreeMap<String, CachedUIDMeta> map = db.hashMap(uidMapNames.get(type));
 				try {
 					return map.get(name);
 				} finally {
@@ -264,7 +297,7 @@ public class CacheImpl implements Closeable {
 		execute(new TxCallable<Void>() {
 			@Override
 			public Void tx(final DB db) throws TxRollbackException {
-				final BTreeMap<String, CachedUIDMeta> map = db.treeMap(uidMapNames.get(type));
+				final HTreeMap<String, CachedUIDMeta> map = db.hashMap(uidMapNames.get(type));
 				try {
 					map.putIfAbsent(meta.getUidHex(), meta);
 					return null;
@@ -275,23 +308,22 @@ public class CacheImpl implements Closeable {
 		});
 	}
 	
-	public void preLoad(final UniqueId.UniqueIdType type) {
-		execute(new TxCallable<Void>(){
+	public long preLoad(final UniqueId.UniqueIdType type) {
+		return execute(new TxCallable<Long>(){
 			@Override
-			//BTreeMap<String, CachedUIDMeta> map = db.treeMap(uidMapNames.get(type));
-			public Void tx(DB db) throws TxRollbackException {
-				final BTreeMap<String, CachedUIDMeta> map = db.treeMap(uidMapNames.get(type));
+			//HTreeMap<String, CachedUIDMeta> map = db.hashMap(uidMapNames.get(type));
+			public Long tx(DB db) throws TxRollbackException {
+				final HTreeMap<String, CachedUIDMeta> map = db.hashMap(uidMapNames.get(type));
 				try {
-					preLoad(type, map);
+					return preLoad(type, map);
 				} finally {
 					map.close();
 				}
-				return null;
 			}
 		});
 	}
 	
-	public void preLoad(final UniqueId.UniqueIdType type, final BTreeMap<String, CachedUIDMeta> map) {
+	public long preLoad(final UniqueId.UniqueIdType type, final HTreeMap<String, CachedUIDMeta> map) {
 		Connection conn = null;
 		PreparedStatement ps = null;
 		ResultSet rset = null;
@@ -306,6 +338,7 @@ public class CacheImpl implements Closeable {
 				String name = rset.getString(2);
 				map.put(xuid, new CachedUIDMeta(name, UniqueId.stringToUid(xuid), type));				
 			}
+			return map.sizeLong();
 		} catch (Exception x) {
 			x.printStackTrace(System.err);
 			throw new RuntimeException(x);
@@ -325,7 +358,7 @@ public class CacheImpl implements Closeable {
 			 */
 			@Override
 			public void tx(final DB db) throws TxRollbackException {
-				db.treeMap(TSMETA_NAME).clear();
+				db.hashMap(TSMETA_NAME).clear();
 				
 			}
 		});
