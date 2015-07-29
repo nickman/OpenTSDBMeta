@@ -24,12 +24,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import net.opentsdb.uid.UniqueId;
+
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.phoenix.expression.Expression;
 import org.apache.phoenix.expression.function.ScalarFunction;
 import org.apache.phoenix.schema.tuple.Tuple;
 import org.apache.phoenix.schema.types.PDataType;
 import org.apache.phoenix.schema.types.PInteger;
+import org.apache.phoenix.schema.types.PVarbinary;
 import org.apache.phoenix.schema.types.PVarchar;
 
 /**
@@ -46,7 +49,11 @@ public class OpenTSDBFunctions {
 	public static final Charset UTF8 = Charset.forName("UTF8");
   /** Hex decode characters */
   private static final char[] hexCode = "0123456789ABCDEF".toCharArray();
-
+  private static final byte[] EMPTY_STR = "".getBytes(UTF8); 
+  public static final short METRIC_WIDTH = 3;
+  public static final short TIMESTAMP_BYTES = 4;
+  public static final short MTWIDTH = METRIC_WIDTH + TIMESTAMP_BYTES;
+  
   /**
    * Returns the passed byte array in Hex string format
    * @param data The bytes to format
@@ -225,7 +232,7 @@ public class OpenTSDBFunctions {
 		
 		
 		
-		private static final byte[] EMPTY_STR = "".getBytes(UTF8); 
+		
 		
 		/**
 		 * {@inheritDoc}
@@ -261,5 +268,114 @@ public class OpenTSDBFunctions {
 		}				
 	}
 	
+	
+	/**
+	 * <p>Title: TSRowKeyToTSUID</p>
+	 * <p>Description: </p> 
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.TSRowKeyToTSUID</code></p>
+	 */
+	public static class TSRowKeyToTSUID extends AbstractScalarFunction<String> {
+		/**
+		 * Creates a new TSRowKeyToTSUID
+		 */
+		public TSRowKeyToTSUID() {
+			super(PVarchar.INSTANCE, "TSUID");
+		}
+		/**
+		 * Creates a new TSRowKeyToTSUID
+		 * @param children The UDF's children
+		 */
+		public TSRowKeyToTSUID(final List<Expression> children) {
+			super(PVarchar.INSTANCE, "TSUID", children);
+		}		
+		/**
+		 * {@inheritDoc}
+		 * @see com.heliosapm.phoenix.udf.OpenTSDBFunctions.AbstractScalarFunction#evaluate(org.apache.phoenix.schema.tuple.Tuple, org.apache.hadoop.hbase.io.ImmutableBytesWritable)
+		 */
+		@Override
+		public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
+			final List<Object> args = parseArguments(tuple, ptr);
+			// =============================================
+			final byte[] input = (byte[])args.get(0);
+			// =============================================
+			if(input==null || input.length==0) {
+				ptr.set(EMPTY_STR);
+			} else {
+				final byte[] b = new byte[input.length-TIMESTAMP_BYTES];
+				System.arraycopy(input, 0, b, 0, METRIC_WIDTH);
+				System.arraycopy(input, MTWIDTH, b, METRIC_WIDTH, input.length - MTWIDTH);
+				ptr.set(UniqueId.uidToString(b).getBytes(UTF8));
+			}
+			return true; 
+		}
+		
+	    public int compare(final byte[] a, final byte[] b) {
+	      final int length = Math.min(a.length, b.length);
+	      if (a == b) {  // Do this after accessing a.length and b.length
+	        return 0;    // in order to NPE if either a or b is null.
+	      }
+	      int i;
+	      // First compare the metric ID.
+	      for (i = 0; i < METRIC_WIDTH; i++) {
+	        if (a[i] != b[i]) {
+	          return (a[i] & 0xFF) - (b[i] & 0xFF);  // "promote" to unsigned.
+	        }
+	      }
+	      // Then skip the timestamp and compare the rest.
+	      for (i += TIMESTAMP_BYTES; i < length; i++) {
+	        if (a[i] != b[i]) {
+	          return (a[i] & 0xFF) - (b[i] & 0xFF);  // "promote" to unsigned.
+	        }
+	      }
+	      return a.length - b.length;
+	    }
+		
+	}
+	
+	/**
+	 * <p>Title: TSRowKeyToBytes</p>
+	 * <p>Description: </p> 
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.TSRowKeyToBytes</code></p>
+	 */
+	public static class TSRowKeyToBytes extends AbstractScalarFunction<byte[]> {
+		/**
+		 * Creates a new TSRowKeyToBytes
+		 */
+		public TSRowKeyToBytes() {
+			super(PVarbinary.INSTANCE, "TSUIDBYTES");
+		}
+		/**
+		 * Creates a new TSRowKeyToBytes
+		 * @param children The UDF's children
+		 */
+		public TSRowKeyToBytes(final List<Expression> children) {
+			super(PVarbinary.INSTANCE, "TSUIDBYTES", children);
+		}		
+		/**
+		 * {@inheritDoc}
+		 * @see com.heliosapm.phoenix.udf.OpenTSDBFunctions.AbstractScalarFunction#evaluate(org.apache.phoenix.schema.tuple.Tuple, org.apache.hadoop.hbase.io.ImmutableBytesWritable)
+		 */
+		@Override
+		public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
+			final List<Object> args = parseArguments(tuple, ptr);
+			// =============================================
+			final byte[] input = (byte[])args.get(0);
+			// =============================================
+			if(input==null || input.length==0) {
+				ptr.set(EMPTY_STR);
+			} else {
+				final byte[] b = new byte[input.length-TIMESTAMP_BYTES];
+				System.arraycopy(input, 0, b, 0, METRIC_WIDTH);
+				System.arraycopy(input, MTWIDTH, b, METRIC_WIDTH, input.length - MTWIDTH);
+				ptr.set(b);
+			}
+			return true; 
+		}
+	}
+
 	
 }
