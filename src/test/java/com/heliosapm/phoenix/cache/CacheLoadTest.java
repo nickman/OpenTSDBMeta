@@ -29,12 +29,14 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
 
 import javax.management.ObjectName;
+import javax.xml.bind.DatatypeConverter;
 
 import net.opentsdb.uid.UniqueId;
 
@@ -58,8 +60,14 @@ import com.heliosapm.utils.time.SystemClock.ElapsedTime;
 public class CacheLoadTest {
 	private static final Logger log = LoggerFactory .getLogger(CacheLoadTest.class);
 	public static final String JDBC_DRIVER = "org.h2.Driver";
-	public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
+//	public static final String JDBC_URL = "jdbc:h2:tcp://10.5.202.22:8083//var/opt/opentsdb/sqlcatalog/tsdb/tsdb";
+	public static final String JDBC_URL = "jdbc:h2:tcp://127.0.0.1:9092/tsdb";
+	
 	public static final String FILE_NAME = System.getProperty("java.io.tmpdir") + File.separator + "tsmeta.db";
+	
+	public static final String TAGK_SQL = "SELECT NAME FROM TSD_TAGK WHERE XUID = ?";
+	public static final String TAGV_SQL = "SELECT NAME FROM TSD_TAGV WHERE XUID = ?";
+	public static final String METRIC_SQL = "SELECT NAME FROM TSD_METRIC WHERE XUID = ?";
 	
 	Connection conn = null;
 	PreparedStatement ps = null;
@@ -70,6 +78,72 @@ public class CacheLoadTest {
 	 */
 	public CacheLoadTest() {
 		initDb();
+	}
+	
+	public CachedUIDMeta getName(final Connection conn, final UniqueId.UniqueIdType type, final String xuid) {
+		switch(type) {
+		case METRIC:
+			return getMetric(conn, xuid);
+		case TAGK:
+			return getTagK(conn, xuid);
+		case TAGV:
+			return getTagV(conn, xuid);
+		default:
+			throw new RuntimeException();
+			
+		}
+	}
+	
+	final CacheImpl cache = CacheImpl.getInstance(FILE_NAME);
+	
+	
+	public CachedUIDMeta getTagK(final Connection conn, final String xuid) {
+		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.TAGK;
+		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		if(cm==null) {			
+			cm = new CachedUIDMeta(getName(conn, TAGK_SQL, xuid), UniqueId.stringToUid(xuid), _type);
+			cache.putCachedUIDMeta(_type, cm);
+		}
+		return cm;
+	}
+	
+	public CachedUIDMeta getTagV(final Connection conn, final String xuid) {
+		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.TAGV;
+		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		if(cm==null) {			
+			cm = new CachedUIDMeta(getName(conn, TAGV_SQL, xuid), UniqueId.stringToUid(xuid), _type);
+			cache.putCachedUIDMeta(_type, cm);
+		}
+		return cm;
+	}
+	
+	public CachedUIDMeta getMetric(final Connection conn, final String xuid) {
+		final UniqueId.UniqueIdType _type = UniqueId.UniqueIdType.METRIC;
+		CachedUIDMeta cm = cache.getCachedUIDMeta(_type, xuid);
+		if(cm==null) {			
+			cm = new CachedUIDMeta(getName(conn, METRIC_SQL, xuid), UniqueId.stringToUid(xuid), _type);
+			cache.putCachedUIDMeta(_type, cm);
+		}
+		return cm;
+	}
+
+
+	
+	public String getName(final Connection conn, final String sql, final String xuid) {
+		PreparedStatement ps = null;
+		ResultSet rset = null;
+		try {
+			 ps = conn.prepareStatement(sql);
+			 ps.setString(1, xuid);
+			 rset = ps.executeQuery();
+			 rset.next();
+			 return rset.getString(1);
+		} catch (Exception ex) {
+			throw new RuntimeException("Failed to get name for [" + sql.replace("?", xuid) + "]", ex);
+		} finally {
+			if(rset!=null) try { rset.close(); } catch (Exception x) {/* No Op */}
+			if(ps!=null) try { ps.close(); } catch (Exception x) {/* No Op */}
+		}
 	}
 	
 	protected void initDb() {
@@ -129,9 +203,21 @@ public class CacheLoadTest {
 //				log.info("TSMETA:  [{}], tsuid: [{}}", fqn, Arrays.toString(stringToUid(tsuid)));
 				
 				final CachedTSMeta ctm = new CachedTSMeta(on.getDomain(), new TreeMap<String, String>(on.getKeyPropertyList()), bytes);
-				final CachedUIDMeta[] uids = ctm.getUIDMetas().toArray(new CachedUIDMeta[0]);
-				log.info("CachedTSMeta: [{}]", ctm);
-				log.info("UIDs: {}", Arrays.toString(uids));
+				byte[] metricBytes = new byte[3];
+				System.arraycopy(bytes, 0, metricBytes, 0, 3);
+				List<byte[]> uidBytes = UniqueId.getTagPairsFromTSUID(ctm.getTsuid());
+				log.info("Fetching Metas for TS {}", ctm);
+				Set<CachedUIDMeta> cmetas = new LinkedHashSet<CachedUIDMeta>(uidBytes.size()+1);
+				cmetas.add(getName(conn, UniqueId.UniqueIdType.METRIC, DatatypeConverter.printHexBinary(metricBytes)));
+				for(byte[] b: uidBytes) {
+					final String pairBytes = DatatypeConverter.printHexBinary(b);
+					//log.info("Pairs: [{}]", pairBytes);
+					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGK, pairBytes.substring(0, 6)));
+					cmetas.add(getName(conn, UniqueId.UniqueIdType.TAGV, pairBytes.substring(6)));
+				}
+//				final CachedUIDMeta[] uids = ctm.getUIDMetas().toArray(new CachedUIDMeta[0]);
+//				log.info("CachedTSMeta: [{}]", ctm);
+//				log.info("UIDs: {}", cmetas.toString());
 				cnt++;
 				ctms.add(ctm);
 			}
@@ -146,8 +232,9 @@ public class CacheLoadTest {
 			log.info("Cache Saved [{}] TSMetas to Cache. Elapsed: {}", cnt, summary );
 			et = SystemClock.startClock();
 			for(CachedTSMeta ct: ctms) {
-				CachedTSMeta lookedUp = map.get(ct.getTsuidHex());
-				if(!lookedUp.equals(ct)) throw new RuntimeException("Mismatch between cached:\n\t[" + ct + "] and looked up:\n\t[" + lookedUp + "]");
+				if(!map.containsKey(ct.getTsuidHex())) {
+					throw new RuntimeException("Failed to find key: [" + ct.getTsuidHex() + "]");
+				}
 			}			
 			summary = et.printAvg("Cache Lookups", cnt);
 			log.info("Cache Lookups Elapsed: {}", summary );
@@ -180,9 +267,9 @@ public class CacheLoadTest {
 		try {
 			log.info("Cache Load Test");
 			CacheLoadTest clt = new CacheLoadTest();
-			clt.load(100);
-//			delStore();
-//			clt.load(15000);
+			clt.load(15000);
+			delStore();
+			clt.load(15000);
 		} finally {
 			bigGc();
 			delStore();
