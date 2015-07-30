@@ -78,10 +78,10 @@ public class BinaryToIntegerTest {
     		conn = DriverManager.getConnection("jdbc:phoenix:localhost", p);
 //    		conn = DriverManager.getConnection("jdbc:phoenix:192.168.1.161:2181", p);
 //    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\", 0, 3) from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
-    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\") from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
+//    		ps = conn.prepareStatement("select PK, TOHEX(\"tagv\") from \"tsdb-uid\" where \"tagv\" is not null and PK = ?");
 //    		ps = conn.prepareStatement("SELECT PK, tohex(PK, 0, 3) from \"tsdb\""); 
-//    		ps = conn.prepareStatement("select BINTOINT(PK) from \"tsdb\" LIMIT 3");
-    		ps.setString(1, "/proc");
+    		ps = conn.prepareStatement("select TSUID(PK) from \"tsdb\" LIMIT 3");
+//    		ps.setString(1, "/proc");
     		rset = ps.executeQuery();
     		ResultSetMetaData rsmd = rset.getMetaData();
     		int cnt = 1;
@@ -91,7 +91,7 @@ public class BinaryToIntegerTest {
     		while(rset.next()) {
 //    		log("tagv: [" + rset.getObject(2) + "]");
     			log("PK: [" + rset.getObject(1) + "]");
-    			log("tagv: [" + rset.getObject(2) + "]");
+//    			log("tagv: [" + rset.getObject(2) + "]");
     		}    		
     		rset.close();
     		ps.close();

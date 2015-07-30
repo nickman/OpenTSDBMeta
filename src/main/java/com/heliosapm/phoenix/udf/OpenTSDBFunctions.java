@@ -20,18 +20,23 @@ package com.heliosapm.phoenix.udf;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 
-import net.opentsdb.uid.UniqueId;
+import javax.xml.bind.DatatypeConverter;
 
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
 import org.apache.phoenix.expression.Expression;
 import org.apache.phoenix.expression.function.ScalarFunction;
 import org.apache.phoenix.schema.tuple.Tuple;
 import org.apache.phoenix.schema.types.PDataType;
 import org.apache.phoenix.schema.types.PInteger;
+import org.apache.phoenix.schema.types.PTimestamp;
 import org.apache.phoenix.schema.types.PVarbinary;
 import org.apache.phoenix.schema.types.PVarchar;
 
@@ -53,6 +58,54 @@ public class OpenTSDBFunctions {
   public static final short METRIC_WIDTH = 3;
   public static final short TIMESTAMP_BYTES = 4;
   public static final short MTWIDTH = METRIC_WIDTH + TIMESTAMP_BYTES;
+  
+	public static byte[] getBytes(final ImmutableBytesWritable ptr) {
+		final int len = ptr.getLength();
+		final int offset = ptr.getOffset();
+		final byte[] bytes = ptr.get();
+		final byte[] b = new byte[len];
+		System.arraycopy(bytes, offset, b, 0, len);
+		return b;
+	}
+	
+	public static String printTuple(final Tuple tuple) {
+		final StringBuilder b = new StringBuilder("Tuple:");
+		b.append("\n\tSize:").append(tuple.size());
+		ImmutableBytesWritable ptr = new ImmutableBytesWritable();
+		tuple.getKey(ptr);
+		
+		b.append("\n\tKey:").append(new String(getBytes(ptr), UTF8));
+		b.append("\n\tKey Length:").append(ptr.getLength());
+		b.append("\n\tKey Offset:").append(ptr.getOffset());
+		b.append("\n\tKey L-O:").append(ptr.getLength() - ptr.getOffset());
+		for(int i = 0; i < tuple.size(); i++) {
+			
+			b.append("\n\t\tCell#").append(i).append(":");			
+			final Cell cell = tuple.getValue(i);
+			
+			b.append("\n\t\t(").append(cell.getClass().getName()).append(")");
+			b.append("\n\t\tTimestamp:[").append(new Date(cell.getTimestamp())).append("]");
+			b.append("\n\t\tFamily:").append(new String(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), UTF8));
+			b.append("\n\t\tQualfier:").append(new String(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength(), UTF8));
+			b.append("\n\t\tRow:[").append(new String(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength(), UTF8)).append("]");
+			b.append("\n\t\tValue:[").append(Arrays.toString(cell.getValueArray())).append("]");
+			b.append("\n\t\tTags:[").append(new String(cell.getTagsArray(), cell.getTagsOffset(), cell.getTagsLength(), UTF8)).append("]");
+			
+		}
+		return b.toString();
+	}
+	
+	/**
+	 * Returns the timestamp of the first cell in the passed tuple
+	 * @param tuple The tuple
+	 * @return the timestamp
+	 */
+	public static Timestamp getTimestamp(final Tuple tuple) {
+		if(tuple.size()==0) return null;
+		return new Timestamp(tuple.getValue(0).getTimestamp());
+	}
+
+  
   
   /**
    * Returns the passed byte array in Hex string format
@@ -271,7 +324,7 @@ public class OpenTSDBFunctions {
 	
 	/**
 	 * <p>Title: TSRowKeyToTSUID</p>
-	 * <p>Description: </p> 
+	 * <p>Description: Extracts the TSDB TSUID from the tsdb rowkey and returns it as a string</p> 
 	 * <p>Company: Helios Development Group LLC</p>
 	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
 	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.TSRowKeyToTSUID</code></p>
@@ -306,7 +359,7 @@ public class OpenTSDBFunctions {
 				final byte[] b = new byte[input.length-TIMESTAMP_BYTES];
 				System.arraycopy(input, 0, b, 0, METRIC_WIDTH);
 				System.arraycopy(input, MTWIDTH, b, METRIC_WIDTH, input.length - MTWIDTH);
-				ptr.set(UniqueId.uidToString(b).getBytes(UTF8));
+				ptr.set(DatatypeConverter.printHexBinary(b).getBytes(UTF8));
 			}
 			return true; 
 		}
@@ -336,7 +389,7 @@ public class OpenTSDBFunctions {
 	
 	/**
 	 * <p>Title: TSRowKeyToBytes</p>
-	 * <p>Description: </p> 
+	 * <p>Description: Extracts the TSDB TSUID from the tsdb rowkey and returns it as a byte array</p> 
 	 * <p>Company: Helios Development Group LLC</p>
 	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
 	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.TSRowKeyToBytes</code></p>
@@ -377,5 +430,71 @@ public class OpenTSDBFunctions {
 		}
 	}
 
+	/**
+	 * <p>Title: DumpMeta</p>
+	 * <p>Description: Returns meta data about the passed column (tuple)</p> 
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.DumpMeta</code></p>
+	 */
+	public static class DumpMeta extends AbstractScalarFunction<String> {
+		/**
+		 * Creates a new DumpMeta
+		 */
+		public DumpMeta() {
+			super(PVarchar.INSTANCE, "DUMP");
+		}
+		/**
+		 * Creates a new DumpMeta
+		 * @param children The UDF's children
+		 */
+		public DumpMeta(final List<Expression> children) {
+			super(PVarchar.INSTANCE, "DUMP", children);
+		}		
+		/**
+		 * {@inheritDoc}
+		 * @see com.heliosapm.phoenix.udf.OpenTSDBFunctions.AbstractScalarFunction#evaluate(org.apache.phoenix.schema.tuple.Tuple, org.apache.hadoop.hbase.io.ImmutableBytesWritable)
+		 */
+		@Override
+		public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
+			ptr.set(printTuple(tuple).getBytes(UTF8));
+			return true; 
+		}
+	}
+	
+	/**
+	 * <p>Title: CellTimestamp</p>
+	 * <p>Description: Returns the timestamp of the passed column</p> 
+	 * <p>Company: Helios Development Group LLC</p>
+	 * @author Whitehead (nwhitehead AT heliosdev DOT org)
+	 * <p><code>com.heliosapm.phoenix.udf.OpenTSDBFunctions.CellTimestamp</code></p>
+	 */
+	public static class CellTimestamp extends AbstractScalarFunction<Timestamp> {
+		/**
+		 * Creates a new CellTimestamp
+		 */
+		public CellTimestamp() {
+			super(PTimestamp.INSTANCE, "TS");
+		}
+		/**
+		 * Creates a new CellTimestamp
+		 * @param children The UDF's children
+		 */
+		public CellTimestamp(final List<Expression> children) {
+			super(PTimestamp.INSTANCE, "TS", children);
+		}		
+		/**
+		 * {@inheritDoc}
+		 * @see com.heliosapm.phoenix.udf.OpenTSDBFunctions.AbstractScalarFunction#evaluate(org.apache.phoenix.schema.tuple.Tuple, org.apache.hadoop.hbase.io.ImmutableBytesWritable)
+		 */
+		@Override
+		public boolean evaluate(final Tuple tuple, final ImmutableBytesWritable ptr) {
+			final Timestamp ts = getTimestamp(tuple);
+			if(ts==null) return false;
+			ptr.set(PTimestamp.INSTANCE.toBytes(ts));
+			return true; 
+		}
+	}
+	
 	
 }
