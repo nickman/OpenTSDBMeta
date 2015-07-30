@@ -86,7 +86,9 @@ public class OpenTSDBFunctions {
 			b.append("\n\t\t(").append(cell.getClass().getName()).append(")");
 			b.append("\n\t\tTimestamp:[").append(new Date(cell.getTimestamp())).append("]");
 			b.append("\n\t\tFamily:").append(new String(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength(), UTF8));
+			b.append("\n\t\tFamilyExt:").append(new String(cell.getFamilyArray(), UTF8));
 			b.append("\n\t\tQualfier:").append(new String(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength(), UTF8));
+			b.append("\n\t\tQualfierExt:").append(new String(cell.getQualifierArray(), UTF8));
 			b.append("\n\t\tRow:[").append(new String(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength(), UTF8)).append("]");
 			b.append("\n\t\tValue:[").append(Arrays.toString(cell.getValueArray())).append("]");
 			b.append("\n\t\tTags:[").append(new String(cell.getTagsArray(), cell.getTagsOffset(), cell.getTagsLength(), UTF8)).append("]");
